@@ -33,6 +33,7 @@ ECOLI_CORE_FNAME = os.path.join(DATA_DIR, 'Orth2011_core.xml')
 ECOLI_XLS_FNAME  = os.path.join(DATA_DIR, 'inline-supplementary-material-2.xls')
 
 ## Data files
+# GEROSA_FLUX_FNAME = os.path.join(DATA_DIR, 'ecoli_fluxes_gerosa2015.csv')
 ECOLI_METAB_FNAME = os.path.join(DATA_DIR, 'ecoli_metabolites_gerosa2015.csv')
 ECOLI_METAB_FNAME = os.path.join(DATA_DIR, 'ecoli_metabolites_kochanowski2017.csv')
 ECOLI_PROT_FNAME  = os.path.join(DATA_DIR, 'ecoli_proteins_schmidt2015.csv')
@@ -55,3 +56,6 @@ BRENDA_TURNOVER   = os.path.join(DATA_DIR, 'turnover.csv')
 
 ## cache files
 ECOLI_EXCORE_FNAME = os.path.join(CACHE_DIR, 'extended_core.xml')
+ECOLI_GEROSA_FLUX  = os.path.join(CACHE_DIR, 'gerosa_fluxes_per_rxn.csv')
+
+
