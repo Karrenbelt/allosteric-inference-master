@@ -33,65 +33,65 @@ core.repair()
 
 ## 2. add additional reactions of interest from iJO1366
 
-# add transport reactions in similar style as the others in the core model
-def add_from_iJO1366(rxn_ids_list):
-    [core.add_reactions([GSMM.reactions.get_by_id(rxn)]) for rxn in rxn_ids_list]
-    return core
-### maybe interesting but not added:
-# + ['FBA3', 'PFK_3'] + ['MGSA','LGTHL','GLYOX'] + ['OAADC']
-# [CITL','FRD2','FRD3','MDH2','MDH3'] + ['F6PA']
+# # add transport reactions in similar style as the others in the core model
+# def add_from_iJO1366(rxn_ids_list):
+#     [core.add_reactions([GSMM.reactions.get_by_id(rxn)]) for rxn in rxn_ids_list]
+#     return core
+# ### maybe interesting but not added:
+# # + ['FBA3', 'PFK_3'] + ['MGSA','LGTHL','GLYOX'] + ['OAADC']
+# # [CITL','FRD2','FRD3','MDH2','MDH3'] + ['F6PA']
 
-## adding pathways for gluconate
-GLCNt2r = cobra.Reaction('GLCNt2r') # GLCNt2rpp, GLCNtex
-h_e = GSMM.metabolites.get_by_id('h_e')
-h_c = GSMM.metabolites.get_by_id('h_c')
-glcn_e = GSMM.metabolites.get_by_id('glcn_e')
-glcn_c = GSMM.metabolites.get_by_id('glcn_c')
-GLCNt2r.add_metabolites({glcn_e: -1.0, h_e:-1.0, glcn_c: 1.0, h_c:1.0})
-core.add_reactions([GLCNt2r])
-core = add_from_iJO1366(['GNK','EX_glcn_e'])
+# ## adding pathways for gluconate
+# GLCNt2r = cobra.Reaction('GLCNt2r') # GLCNt2rpp, GLCNtex
+# h_e = GSMM.metabolites.get_by_id('h_e')
+# h_c = GSMM.metabolites.get_by_id('h_c')
+# glcn_e = GSMM.metabolites.get_by_id('glcn_e')
+# glcn_c = GSMM.metabolites.get_by_id('glcn_c')
+# GLCNt2r.add_metabolites({glcn_e: -1.0, h_e:-1.0, glcn_c: 1.0, h_c:1.0})
+# core.add_reactions([GLCNt2r])
+# core = add_from_iJO1366(['GNK','EX_glcn_e'])
 
-## adding pathways for glycerol
-GLYCt = cobra.Reaction('GLYCt') # GLYCtex, GLYCtpp
-glyc_e = GSMM.metabolites.get_by_id('glyc_e')
-glyc_c = GSMM.metabolites.get_by_id('glyc_c')
-GLYCt.add_metabolites({glyc_e: -1.0, glyc_c: 1.0})
-core.add_reactions([GLYCt])
-core = add_from_iJO1366(['GLYCDx','DHAPT','G3PD2','G3PT','GLYK','EX_glyc_e'])
+# ## adding pathways for glycerol
+# GLYCt = cobra.Reaction('GLYCt') # GLYCtex, GLYCtpp
+# glyc_e = GSMM.metabolites.get_by_id('glyc_e')
+# glyc_c = GSMM.metabolites.get_by_id('glyc_c')
+# GLYCt.add_metabolites({glyc_e: -1.0, glyc_c: 1.0})
+# core.add_reactions([GLYCt])
+# core = add_from_iJO1366(['GLYCDx','DHAPT','G3PD2','G3PT','GLYK','EX_glyc_e'])
 
-## adding pathways for galactose
-GALabc = cobra.Reaction('GALabc') # GALtex, GALabspp
-gal_e = GSMM.metabolites.get_by_id('gal_e')
-gal_c = GSMM.metabolites.get_by_id('gal_c')
-atp_c = GSMM.metabolites.get_by_id('atp_c')
-adp_c = GSMM.metabolites.get_by_id('adp_c')
-GALabc.add_metabolites({gal_e: -1.0, atp_c: -1.0, gal_c: 1.0, adp_c: 1.0})
-core.add_reactions([GALabc])
+# ## adding pathways for galactose
+# GALabc = cobra.Reaction('GALabc') # GALtex, GALabspp
+# gal_e = GSMM.metabolites.get_by_id('gal_e')
+# gal_c = GSMM.metabolites.get_by_id('gal_c')
+# atp_c = GSMM.metabolites.get_by_id('atp_c')
+# adp_c = GSMM.metabolites.get_by_id('adp_c')
+# GALabc.add_metabolites({gal_e: -1.0, atp_c: -1.0, gal_c: 1.0, adp_c: 1.0})
+# core.add_reactions([GALabc])
 
-UGLT = cobra.Reaction('UGLT') # effectively removes udpg_c and updgal_c from the original reaction
-gal1p_c = GSMM.metabolites.get_by_id('gal1p_c') 
-g1p_c = GSMM.metabolites.get_by_id('g1p_c')
-UGLT.add_metabolites({gal1p_c: -1.0, g1p_c: 1.0})
-core.add_reactions([UGLT])
-core = add_from_iJO1366(['PGMT','GALKr','EX_gal_e'])
+# UGLT = cobra.Reaction('UGLT') # effectively removes udpg_c and updgal_c from the original reaction
+# gal1p_c = GSMM.metabolites.get_by_id('gal1p_c') 
+# g1p_c = GSMM.metabolites.get_by_id('g1p_c')
+# UGLT.add_metabolites({gal1p_c: -1.0, g1p_c: 1.0})
+# core.add_reactions([UGLT])
+# core = add_from_iJO1366(['PGMT','GALKr','EX_gal_e'])
 
-## changing pathways for pyruvate
-core.remove_reactions(['FRUpts2']) # change entry point to fpb_c instead of f6p_c (ambiguous), to match Gerosa 2015
-FRUpts = cobra.Reaction('FRUpts')
-fru_e = GSMM.metabolites.get_by_id('fru_e')
-f1p_c = GSMM.metabolites.get_by_id('f1p_c')
-FRUpts.add_metabolites({fru_e: -1.0, f1p_c: 1.0})
-core.add_reactions([FRUpts])
-core = add_from_iJO1366(['FRUK'])
+# ## changing pathways for pyruvate
+# core.remove_reactions(['FRUpts2']) # change entry point to fpb_c instead of f6p_c (ambiguous), to match Gerosa 2015
+# FRUpts = cobra.Reaction('FRUpts')
+# fru_e = GSMM.metabolites.get_by_id('fru_e')
+# f1p_c = GSMM.metabolites.get_by_id('f1p_c')
+# FRUpts.add_metabolites({fru_e: -1.0, f1p_c: 1.0})
+# core.add_reactions([FRUpts])
+# core = add_from_iJO1366(['FRUK'])
 
-## add ED pathway, ACS for acetate, and MOX for malate oxidase (MQO, MDH2, MDH3: all the same reaction, diff cofactor)
-core = add_from_iJO1366(['EDD','EDA'] + ['ACS'] + ['MOX'])
+# ## add ED pathway, ACS for acetate, and MOX for malate oxidase (MQO, MDH2, MDH3: all the same reaction, diff cofactor)
+# core = add_from_iJO1366(['EDD','EDA'] + ['ACS'] + ['MOX'])
 
-core.reactions.get_by_id('EX_glc__D_e').bounds = [0, 1000] # is not set to zero in the core model initially
+# core.reactions.get_by_id('EX_glc__D_e').bounds = [0, 1000] # is not set to zero in the core model initially
 
-core.repair()
+# core.repair()
 
-cobra.io.write_sbml_model(core, settings.CACHE_DIR+'/extended_core.xml')
+# cobra.io.write_sbml_model(core, settings.CACHE_DIR+'/extended_core.xml')
 
 
 
