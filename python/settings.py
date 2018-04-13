@@ -24,7 +24,7 @@ BRENDA_DIR = os.path.join(BASE_DIR, 'data/brenda_query_2016_06_20')
 KEGG2CHEBI_FNAME         = os.path.join(DATA_DIR, 'kegg2chebi.csv')
 BIGG_METABOLITE_FNAME    = os.path.join(DATA_DIR, 'bigg_models_metabolites.txt')
 BIGG_REACTION_FNAME      = os.path.join(DATA_DIR, 'bigg_models_reactions.txt')
-ECOLI_THERMO_CACHE_FNAME = os.path.join(DATA_DIR, 'ecoli_thermodynamics.csv')
+ECOLI_THERMO_FNAME       = os.path.join(DATA_DIR, 'ecoli_thermodynamics.csv')
 
 ## E. coli model files
 ECOLI_JSON_FNAME = os.path.join(DATA_DIR, 'iJO1366.json')
@@ -57,5 +57,8 @@ BRENDA_TURNOVER   = os.path.join(DATA_DIR, 'turnover.csv')
 ## cache files
 ECOLI_EXCORE_FNAME = os.path.join(CACHE_DIR, 'extended_core.xml')
 ECOLI_GEROSA_FLUX  = os.path.join(CACHE_DIR, 'gerosa_fluxes_per_rxn.csv')
+
+
+BIOMASS_ID = 'Biomass_Ecoli_core_w_GAM'
 
 
