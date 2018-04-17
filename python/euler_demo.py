@@ -23,5 +23,20 @@ if __name__ == '__main__':
     main(number_chunks)
 
 
-### 100 jobs over 8 works:
-### bsub -J "demo_array[1-8]" -R light python demo.py 100
+## Euler: https://scicomp.ethz.ch/
+## 
+## From your PC
+## to server: scp file.txt michielk@euler.ethz.ch:folder/ |or| scp -r folder/ michielk@euler.ethz.ch:
+## from server: scp -r username@euler.ethz.ch:folder/ /Users/Username/Downloads/
+## 
+## On Euler
+## login: ssh username@euler.ethz.ch
+## see available modules: module avail
+## module load python/3.6.0
+## module load imsbtools
+## 
+## pip install --user tellurium
+## 
+
+### running this script: 100 jobs over 8 works:
+### bsub -J "demo_array[1-8]" -R light python euler_demo.py 100
