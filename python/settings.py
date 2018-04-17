@@ -19,6 +19,7 @@ DATA_DIR = os.path.join(BASE_DIR, 'data')
 CACHE_DIR = os.path.join(BASE_DIR, 'cache')
 RESULT_DIR = os.path.join(BASE_DIR, 'result')
 BRENDA_DIR = os.path.join(BASE_DIR, 'data/brenda_query_2016_06_20')
+SERVER_SCRATCH = os.path.join('/cluster/scratch/michielk')
 
 ## ID mapping files
 KEGG2CHEBI_FNAME         = os.path.join(DATA_DIR, 'kegg2chebi.csv')
