@@ -8,7 +8,7 @@ Created on Thu Apr 19 16:42:44 2018
 
 import tellurium as te # needs to be imported before cobra, otherwise: "Segmentation fault: 11"
 import cobra
-import settings, os, sys, csv, itertools, pickle, math
+import settings, json, itertools, pickle
 from cobra.util import create_stoichiometric_matrix
 import pandas as pd
 import numpy as np
@@ -47,7 +47,9 @@ def Delta_gibbs(filename):
     return pd.DataFrame(df.values[:59,0:16], columns = columns, index = index).dropna(axis=0, how='all')
 
 class MakeModel:
-
+    """
+        Generates a kinetic model from a stoichiometric matrix
+    """
     def __init__(self, S):
     
         ## change name space metabolites and reactions
@@ -203,7 +205,8 @@ class MakeModel:
             if k in self.vmax.keys():
                 pass
             elif self.mapping.get(k[2:]) in flux_solution.index: ## 'v_'+rxn
-                self.P[k] = str(float(flux_solution.loc[self.mapping[k[2:]]]))
+                flux_value = float(flux_solution.loc[self.mapping[k[2:]]])
+                self.P[k] = str(settings.CONVERT_UNITS(flux_value))
 #             elif k.lower() in K.index: ## assigning known Km- and Keq-values (case insensitive)
 #                 l = k.lower()
 #                 if math.isnan(K.at[l, '!Std']):
@@ -234,10 +237,6 @@ class MakeModel:
         def convert_string(string):
             return ' '.join([self.mapping[x] if x in self.mapping else x for x in string.split(' ')])
         
-        def calculate_vmax(vmax):
-            mapped_equation = [self.X0[x] if x in self.X0 else self.P[x] if x in self.P else x for x in vmax.split(' ')]
-            return str(eval(' '.join(mapped_equation).replace('^','**')))
-        
         antimony_str = ''''''
         antimony_str += '// model *coli_core()'
 
@@ -257,7 +256,7 @@ class MakeModel:
 
         antimony_str += '\n\n// Derived parameters:'
         for rxn, vmax in self.vmax.items():
-            vmax = calculate_vmax(vmax)
+            vmax = calculate_vmax(self, vmax)
             self.P[rxn] = vmax
             antimony_str += '\n '+rxn+' = '+vmax+'; '
             
@@ -266,23 +265,29 @@ class MakeModel:
     def write_SBML_mapping(self):
         r = te.loada(self.antimony)
         r.exportToSBML(settings.CACHE_DIR+'/extended_core_kinetic.xml', current=False)
-        w = csv.writer(open(settings.CACHE_DIR+"/mapping.csv", "w"))
-        for key, val in self.mapping.items(): 
-            w.writerow([key, val])
+        json.dump(self.mapping, open(settings.CACHE_DIR+"/mapping.json",'w'))
+        species_and_parameters = {**self.P, **self.X0}
+        json.dump(species_and_parameters, open(settings.CACHE_DIR+"/model_species_and_parameters.json",'w'))
+        #w = csv.writer(open(settings.CACHE_DIR+"/mapping.csv", "w"))
+        #for key, val in self.mapping.items(): 
+        #    w.writerow([key, val])
+            
+def calculate_vmax(model, vmax):
+    mapped_equation = [model.X0[x] if x in model.X0 else model.P[x] if x in model.P else x for x in vmax.split(' ')]
+    return str(eval(' '.join(mapped_equation).replace('^','**')))
 
-def perturb(model, condition): # to glucose 
-    
+def perturb(model, condition, new_condition): # to glucose 
+    """
+        Adds an event to the antimony model, simulating a carbon source switch
+    """
     R1 = model.mapping[settings.UPTAKE[condition]]
-    R2 = model.mapping['GLCpts']
+    R2 = model.mapping[settings.UPTAKE[new_condition]]
     VmaxR1 = 'E_'+R1+'_kcat_'+R1
     VmaxR2 = 'E_'+R2+'_kcat_'+R2
-    model.P['v_'+R2] = str(settings.CONVERT_UNITS(9.65))
+    uptake_rate = pd.read_csv(settings.ECOLI_GEROSA_PHYS, index_col=0).loc['uptake',new_condition]
+    model.P['v_'+R2] = str(settings.CONVERT_UNITS(uptake_rate))
     
-    def calculate_vmax(vmax):  # copy from above..
-        mapped_equation = [model.X0[x] if x in model.X0 else model.P[x] if x in model.P else x for x in vmax.split(' ')]
-        return str(eval(' '.join(mapped_equation).replace('^','**')))
-    
-    value = calculate_vmax(model.vmax[VmaxR2])
+    value = calculate_vmax(model, model.vmax[VmaxR2])
     model.antimony += '\n\n //Events: '
     model.antimony += '\nat (time > 10): %s = %s;' % (VmaxR1, '0')  
     model.antimony += '\nat (time > 10): %s = %s;' % (VmaxR2, value)
@@ -292,12 +297,31 @@ def perturb(model, condition): # to glucose
     return model
 
 def allostery(M,R,N):
+    """
+        generates all N-wise allosteric interaction topologies
+        args:
+            M (list) - metabolite names
+            R (list) - reaction names
+            N (int)  - N-wise combinations
+        returns:
+            a list of tuples of tuples [(rxn_tuple), (met_tuple)]
+    """
     rxns = itertools.combinations(R, N)
     mets = itertools.product(M, repeat=N)
     allo = list(itertools.product(rxns, mets))
     return allo
 
 def simulate_antimony_model(model, plot=False, save_results=True, time_points=None):
+    """
+        Simulate the model
+        args:
+            model        - model object (from MakeModel, parameterized)
+            plot         - True or False (default: False)
+            save_results - True or False (default: True)
+            time_points  - Save only specified time points (default: None)
+        return:
+            simulated time series in a pandas DataFrame
+    """
     r = te.loada(model.antimony)
     r.timeCourseSelections= ['time'] + r.getFloatingSpeciesIds() + r.getBoundarySpeciesIds()
     
@@ -325,7 +349,7 @@ def simulate_antimony_model(model, plot=False, save_results=True, time_points=No
     return df
               
             
-def main(condition, n_parameterizations):
+def main(n_parameterizations, condition, new_condition='Glucose'):
     """
         
     """
@@ -363,7 +387,7 @@ def main(condition, n_parameterizations):
     base       = [((),())] 
     single_int = allostery(M,R,1)
     double_int = allostery(M,R,2)
-    topologies = base + single_int + double_int # number_jobs = 34953
+    topologies = base + single_int + double_int
 
     ### time points to save and number of parameterizations per model
     time_points = [0, 10, 15, 25, 40, 45, 55, 70]
@@ -374,7 +398,7 @@ def main(condition, n_parameterizations):
         
     ### iterate over the topologies in this chunk
     results = dict()
-    for j in range(0,len(chunk)): # 35000 / 200 = 175, 25 saved
+    for j in range(0,len(chunk)):
         model = MakeModel(S_sub.copy())
         for rxn in model.rates:
             model.add_rate(rxn)
@@ -385,7 +409,8 @@ def main(condition, n_parameterizations):
         for _ in range(n_parameterizations): # multiple parameterizations per model topology
             model.parameterize(flux_solution)
             model.to_antimony()
-            model = perturb(model, condition)
+            
+            model = perturb(model, condition, new_condition)
             df_sim = simulate_antimony_model(model, plot=True, time_points = time_points)
             1/0
             result += [df_sim, pd.Series(model.P)]
@@ -396,9 +421,9 @@ def main(condition, n_parameterizations):
         pickle.dump(results, handle, protocol=pickle.HIGHEST_PROTOCOL) 
 
 if __name__ == '__main__':
-    condition = 'Pyruvate'#str(sys.argv[1]) # initial carbon source, switching to glucose
+    condition = 'Succinate'#str(sys.argv[1]) # initial carbon source, switching to glucose
     n_parameterizations = 1#int(sys.argv[2])
-    main(condition, n_parameterizations)
+    main(n_parameterizations, condition)
 
 # test: bsub -J "array[1-200]" -W 120:00 -R "rusage[mem=5000]" python ensemble.py Pyruvate 2
 # delta_gibbs = Delta_gibbs(settings.DATA_DIR+'/Gerosa_2015_S2.xlsx')

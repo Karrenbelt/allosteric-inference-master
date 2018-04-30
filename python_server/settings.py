@@ -27,7 +27,7 @@ ECOLI_THERMO_FNAME       = os.path.join(DATA_DIR, 'ecoli_thermodynamics.csv')
 
 ## E. coli model files
 ECOLI_JSON_FNAME = os.path.join(DATA_DIR, 'iJO1366.json')
-ECOLI_SBML_FNAME = os.path.join(DATA_DIR, 'iJO1366.xml')
+ECOLI_GSMM_FNAME = os.path.join(DATA_DIR, 'iJO1366.xml')
 ECOLI_CORE_FNAME = os.path.join(DATA_DIR, 'Orth2011_core.xml')
 ECOLI_XLS_FNAME  = os.path.join(DATA_DIR, 'inline-supplementary-material-2.xls')
 
@@ -58,7 +58,7 @@ BRENDA_TURNOVER   = os.path.join(DATA_DIR, 'turnover.csv')
 ## cache files
 ECOLI_EXCORE_FNAME = os.path.join(CACHE_DIR, 'extended_core.xml')
 ECOLI_GEROSA_FLUX  = os.path.join(CACHE_DIR, 'gerosa_fluxes.csv')
-
+ECOLI_GEROSA_PHYS  = os.path.join(CACHE_DIR, 'gerosa_physiology.csv')
 
 BIOMASS_ID = 'Biomass_Ecoli_core_w_GAM'
 

@@ -1,15 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Apr 26 08:41:34 2018
-
-@author: Zarathustra
-"""
-
-
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
 Created on Thu Apr 19 12:00:30 2018
 
 @author: Zarathustra
@@ -18,12 +9,11 @@ Created on Thu Apr 19 12:00:30 2018
 import settings, cobra, re
 import pandas as pd
 import numpy as np
-import sympy
-from uncertainties import ufloat
 from cobra.util import create_stoichiometric_matrix
 import cobra.util.solver as sutil
 from optlang.symbolics import Zero
 import matplotlib.pyplot as plt
+from biomass import adjust_biomass
 
 def Physiology(filename):
     """
@@ -39,110 +29,13 @@ def Physiology(filename):
     sd = s[1].unstack()
     sd.columns = [x+'_sd' for x in sd.columns]
     df = pd.concat([mean,sd], axis=1)
+    df.to_csv(settings.CACHE_DIR+'/physiology.csv')
+    print('Gerosa physiological data writen here: {}'.format(settings.CACHE_DIR+'/gerosa_physiology.csv'))
     return df
-
-class BiomassComposition(object):
-    
-    def __init__(self, organism='e_coli_fixed'):
-        self.organism = organism
-        
-        if self.organism is not None:
-            self.precursor_df = pd.read_excel(settings.DATA_DIR+'/meta_analysis.xls',
-                                              sheet_name=self.organism + "_biomass",
-                                              index_col=0, header=0).fillna(0)
-            
-            # a Series containing the growth dependence function for each sector
-            self.growth_dependence = self.precursor_df['growth dependence'].apply(
-                    lambda s: sympy.sympify(s))
-            
-            # a DataFrame with the required amount of each precursor in mmol
-            # per 1 gram of that sector
-            self.precursor_df = self.precursor_df.iloc[:, 1:]
-    
-    def GetSectorCorrections(self, growth_rate):
-        """
-            Returns a dataframe with the sector correction factors, which are
-            the only growth-rate dependent part
-        """
-        mu = sympy.symbols('mu')
-        
-        if type(growth_rate) == float:
-            growth_rate = ufloat(growth_rate, 0)
-        
-        sectors = {}
-        for sect, func in self.growth_dependence.items():
-            factor = func.evalf(subs={mu:growth_rate.nominal_value})
-            uncert = np.abs(sympy.diff(func).evalf(subs={mu:growth_rate})) \
-                * growth_rate.std_dev
-            sectors[sect] = ufloat(factor, uncert)
-        
-        return pd.Series(sectors)
-    
-    def GetComposition(self, growth_rate, uncertainty=0.0):
-        """
-            Returns a Series containing values of each precursor in the biomass
-            in units of mmol per gram of cell dry weight
-        """
-        if self.organism is None:
-            return pd.Series()
-        else:
-            sector_correction_factors = self.GetSectorCorrections(growth_rate)
-            biomass_df = self.precursor_df.transpose().multiply(sector_correction_factors)
-            return biomass_df.transpose().apply(np.sum)
-
-def adjust_biomass(model, new_biomass):
-    """
-        Adjust the biomass reaction in accordance with the growth rate
-    """
-    mets = []
-    mapping = {'ATP':'atp_c = adp_c + pi_c',
-               'G6P':'g6p_c',
-               'PEP':'pep_c',
-               'PYR':'pyr_c',
-               'F6P':'g6p_c',
-               'T3P':'dhap_c',
-               'PGA':'3pg_c',
-               'NADH':'nadh_c = nad_c',
-               'NADPH':'nadph_c = nadp_c',
-               'CO2':'co2_c',
-               'R5P':'r5p_c',
-               'E4P':'e4p_c',
-               'OAA':'oaa_c',
-               'AcCoA':'accoa_c = coa_c',
-               'OGA':'akg_c'}
-    
-    for k,v in new_biomass.to_dict().items():
-        if k == 'ATP': # 'ATP':'atp_c = adp_c + pi_c',
-            mets += [('atp_c', v.nominal_value * -1)]
-            mets += [('adp_c', v.nominal_value)]
-            mets += [('pi_c', v.nominal_value)]
-        elif k == 'NADH':
-            mets += [('nadh_c', v.nominal_value * -1)]
-            mets += [('nad_c', v.nominal_value)]
-        elif k == 'NADPH':
-            mets += [('nadph_c', v.nominal_value * -1)]
-            mets += [('nadp_c', v.nominal_value)]
-        elif k == 'AcCoA':
-            mets += [('accoa_c', v.nominal_value * -1)]
-            mets += [('coa_c', v.nominal_value)]    
-        else:   
-            mets += [(mapping[k], v.nominal_value * -1)]
-        
-    ### remove the old, replace by new
-    model.remove_reactions(['Biomass_Ecoli_core_w_GAM'])
-    Biomass_Ecoli_core_w_GAM = cobra.Reaction('Biomass_Ecoli_core_w_GAM') 
-    d = {model.metabolites.get_by_id(met[0]): met[1] for met in mets}
-    Biomass_Ecoli_core_w_GAM.add_metabolites(d)
-    model.add_reactions([Biomass_Ecoli_core_w_GAM])
-    model.objective = 'Biomass_Ecoli_core_w_GAM'
-    
-    return model
-
-
-
 
 def Gerosa_model(gerosa_model_excel):
     """construct the gerosa model from the supplementary file
+       also adopts the name space of iJO1366 (genome-scale model)
     """
     def add_mets(mets, reaction, sign): 
         for sub in mets.split(' + '):
@@ -151,7 +44,7 @@ def Gerosa_model(gerosa_model_excel):
             else:
                 c = 1
                 m = sub.strip()
-            ## fixing some name space issues
+
             m = m.replace('-','__')
             if m == 'acon__C_c':
                 m = 'acon_C_c'
@@ -159,7 +52,7 @@ def Gerosa_model(gerosa_model_excel):
             reaction.add_metabolites({m:sign*float(c)})
         return reaction
         
-    df = pd.read_excel(gerosa_model_excel, sheet_name= 'reactions', header=0, index_col=0)
+    df = pd.read_excel(gerosa_model_excel, sheet_name='reactions', header=0, index_col=0)
 
     ## fixing name space by manual mapping, adopting iJO1366 name space
     gerosa_mapping = {'FUM_SEC':'FUMt2_2','SUCCt':'SUCCt2_2','PYRt2r':'PYRt2r',
@@ -203,7 +96,7 @@ def extract_stoich(model):
     S.index.name = 'metabolite'
     return S
 
-def Flux_13C(filename):
+def flux_13C(filename):
     """Parsing and mapping of the fluxes to the proper name space"""
     rxn_mapping = {'GLCpts':'GLCpts , EX_glc__D_e',
                    'GlcnUpt':'GLCNt2r , EX_glcn_e',
@@ -230,20 +123,18 @@ def Flux_13C(filename):
     index = pd.Series([' '.join([rxn_mapping[rxn] if rxn in rxn_mapping else rxn for rxn in re.findall(r'\b\w+\b|\+|\-|\(|\)|,', rxns)]) for rxns in flux_rxns], index=df.index[1:])
     return pd.DataFrame(list(df.values[1:][0:,0:16]) , columns=columns, index=index)
 
-def Expand_flux_13C(flux_13C):
+def expand_flux_13C(flux_13C):
     """Expanding measured fluxes by assigning them to individual reactions.
     Additionally, several manual curations are made to account for missing 
     information and errors in the published supplementary data.
     """
     ### fix coa_c / accoa_c / ac_c balance imbalance
-# =============================================================================
-#         b_c = 3.7478
-#         COA = - flux_13C.loc['( ACt2r , ACKr , PTAr ) + ACS , EX_ac_e',:] \
-#             + flux_13C.loc['( ICL , MALS )',:] \
-#             + flux_13C.loc['( CS , ACONTa , ACONTb )',:] - flux_13C.loc['( PDH )',:]\
-#             + b_c * flux_13C.loc['Biomass_Ecoli_core_w_GAM',:] 
-#         flux_13C.loc['( ACt2r , ACKr , PTAr ) + ACS , EX_ac_e',:] = flux_13C.loc['( ACt2r , ACKr , PTAr ) + ACS , EX_ac_e',:].add(COA[0:8])
-# =============================================================================
+    b_c = 3.7478
+    COA = - flux_13C.loc['( ACt2r , ACKpr , PTAr ) + ACS , EX_ac_e',:] \
+        + flux_13C.loc['( ICL , MALS )',:] \
+        + flux_13C.loc['( CS , ACONTa , ACONTb )',:] - flux_13C.loc['( PDH )',:]\
+        + b_c * flux_13C.loc['Biomass_Ecoli_core_w_GAM',:] 
+    flux_13C.loc['( ACt2r , ACKr , PTAr ) + ACS , EX_ac_e',:] = flux_13C.loc['( ACt2r , ACKr , PTAr ) + ACS , EX_ac_e',:].add(COA[0:8])
 
     vector_index = [item for sublist in [re.findall(r'\b\w+\b', flux) for flux in flux_13C.index] for item in sublist]
     df = pd.DataFrame(index = vector_index, columns = flux_13C.columns)
@@ -289,7 +180,7 @@ def Expand_flux_13C(flux_13C):
             df.loc[rxns[0],:] = flux_13C.loc[flux,:]
             df.loc[rxns[1],:] = -flux_13C.loc[flux,:]
         elif flux == '( ACt2r , ACKr , PTAr ) + ACS , EX_ac_e':
-            df.loc[rxns[0],:] = flux_13C.loc[flux,:]
+            df.loc[rxns[0],:] = flux_13C.loc[flux,:] 
             df.loc[rxns[1],:] = flux_13C.loc[flux,:]  * [not i for i in signs]
             df.loc[rxns[2],:] = -flux_13C.loc[flux,:] * [not i for i in signs]
             df.loc[rxns[3],:] = flux_13C.loc[flux,:]  * signs
@@ -324,25 +215,6 @@ def Expand_flux_13C(flux_13C):
         if r in ['PGM','PGK','RPI','SUCOAS']:
             df.loc[r, :] = -df.loc[r, :]
 
-    ### condition specific flipping for our extended core model, not gerosa
-# =============================================================================
-#         for cond in ['Acetate','Glycerol','Galactose']:
-#             df.loc['ACKr',cond] = -df.loc['ACKr',cond]
-#         
-#         for cond in ['Pyruvate']:
-#             df.loc['LDH_D',cond]       = -df.loc['LDH_D',cond]
-#             df.loc['EX_lac__D_e',cond] = -df.loc['EX_lac__D_e',cond]
-#             df.loc['D_LACt2',cond]     = -df.loc['D_LACt2',cond]
-#         
-#         for cond in ['Acetate']: # flipping: ( ACKr , PTAr ) + ACS
-#             df.loc['ACKr',cond] = df.loc['ACS',cond]
-#             df.loc['ACS',cond]  = -df.loc['PTAr',cond]
-#             df.loc['PTAr',cond] = -df.loc['ACKr',cond]    
-#     
-#         for cond in ['Succinate']:
-#             df.loc['EX_succ_e',cond] = df.loc['EX_succ_e',cond] + 2.25
-#         
-# =============================================================================
     return df
 
 def determine_imbalance(gerosa_model_excel, rxns_13C, physiology, outfile):
@@ -354,11 +226,9 @@ def determine_imbalance(gerosa_model_excel, rxns_13C, physiology, outfile):
     fluxes = rxns_13C.copy()
     df = pd.DataFrame(index = S.index, columns = settings.CONDITIONS)
     for condition in settings.CONDITIONS:
-        ebc = BiomassComposition('e_coli')
         growth_rate = float(physiology.loc['growth_rate',condition])
         uncertainty = float(physiology.loc['growth_rate',condition+'_sd'])
-        new_biomass = ebc.GetComposition(growth_rate, uncertainty)
-        model = adjust_biomass(gerosa_model.copy(), new_biomass)        
+        model = adjust_biomass(gerosa_model.copy(), growth_rate, uncertainty)        
         S = extract_stoich(model)
         
         fluxes_full = S.transpose().reset_index().join(fluxes[condition], on=S.columns.name)
@@ -424,20 +294,22 @@ def project_fluxes(model, condition, rxns_13C):
     model.objective = prob.Objective(new_obj, direction='min')
     solution = model.optimize().fluxes
     
-    #%%
-    S = extract_stoich(model)
-    imbalance = pd.Series(data = np.dot(S, solution), index=S.index)
-    #print(imbalance[abs(imbalance) > 1e-10])
-    solution.to_json(settings.CACHE_DIR+'/FBA_'+condition+'.json')
+    #
+# =============================================================================
+#     S = extract_stoich(model)
+#     imbalance = pd.Series(data = np.dot(S, solution), index=S.index)
+#     print(imbalance[abs(imbalance) > 1e-10])
+#     solution.to_json(settings.CACHE_DIR+'/FBA_'+condition+'.json')
+# =============================================================================
     
-    #%% make scatter plot of predicted VS measured
+    # make scatter plot of predicted VS measured
     for r in gen:
         fluxes_df.loc[r.id,'predicted'] = solution.loc[r.id]
         fluxes_df.loc[r.id,'lb'] = model.reactions.get_by_id(r.id).lower_bound
         fluxes_df.loc[r.id,'ub'] = model.reactions.get_by_id(r.id).upper_bound
     fig, axs = plt.subplots(1, 2, figsize=(14,6))
     axs[0].plot([fluxes_df['measured'].min(), fluxes_df['measured'].max()], [fluxes_df['predicted'].min(), fluxes_df['predicted'].max()], 'k--', alpha=0.3, linewidth=0.5)
-    plot = fluxes_df.plot(kind='scatter', x=['measured'], y=['predicted'], xerr=fluxes_df.loc[:,'sigma'], 
+    fluxes_df.plot(kind='scatter', x=['measured'], y=['predicted'], xerr=fluxes_df.loc[:,'sigma'], 
           title = condition, ax=axs[0], linewidth=0, s=10, color=(0.7,0.2,0.5))
     
     ### annotate reactions
@@ -487,8 +359,8 @@ def main():
     ## inputs
     gerosa_model_excel = settings.GEROSA_S4
     extended_core = cobra.io.read_sbml_model(settings.ECOLI_EXCORE_FNAME)
-    flux_13C = Flux_13C(settings.GEROSA_S2)
-    rxns_13C = Expand_flux_13C(flux_13C)
+    fluxes = flux_13C(settings.GEROSA_S2)
+    flux_per_rxn = expand_flux_13C(fluxes)
     physiology = Physiology(settings.GEROSA_S2)    
     
     ## output
@@ -497,27 +369,27 @@ def main():
     projected_flux_outfile = settings.CACHE_DIR+'/flux_solutions.p'   
 
     
-    determine_imbalance(gerosa_model_excel, rxns_13C, physiology, gerosa_balance_outfile)
+    determine_imbalance(gerosa_model_excel, flux_per_rxn, physiology, gerosa_balance_outfile)
     print("Gerosa flux imbalance determined, can be found here: {}".format(gerosa_balance_outfile))
     
-    rxns_13C.to_csv(gerosa_fluxes_outfile)
+    flux_per_rxn.to_csv(gerosa_fluxes_outfile)
     print("Gerosa fluxes for flux projection can be found here: {}".format(gerosa_fluxes_outfile))
         
     
-    rxns_13C = condition_specific_flip(rxns_13C)
+    flux_per_rxn = condition_specific_flip(flux_per_rxn)
 
     ## project fluxes on the gerosa model
     flux_solution = dict()
     for condition in settings.CONDITIONS.keys():
         if True: # mode == 1 (flux projection)
-            ebc = BiomassComposition('e_coli')
-            growth_rate = float(physiology.loc['growth_rate',condition])
-            uncertainty = float(physiology.loc['growth_rate',condition+'_sd'])
-            new_biomass = ebc.GetComposition(growth_rate, uncertainty)
-            # extended_core = adjust_biomass(extended_core.copy(), new_biomass)
-            flux_solution[condition] = project_fluxes(extended_core.copy(), condition, rxns_13C)
+# =============================================================================
+#             growth_rate = float(physiology.loc['growth_rate',condition])
+#             uncertainty = float(physiology.loc['growth_rate',condition+'_sd'])
+#             extended_core = adjust_biomass(extended_core.copy(), growth_rate, uncertainty)
+# =============================================================================
+            flux_solution[condition] = project_fluxes(extended_core.copy(), condition, flux_per_rxn)
         else:
-            flux_solution[condition] = FBA(extended_core.copy(), condition, rxns_13C)
+            flux_solution[condition] = FBA(extended_core.copy(), condition, flux_per_rxn)
     
     pd.Panel(flux_solution).to_pickle(projected_flux_outfile)
     print('A flux solution generated, writen here: {}'.format(projected_flux_outfile))
