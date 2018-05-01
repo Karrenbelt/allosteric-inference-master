@@ -8,7 +8,7 @@ Created on Thu Apr 19 16:42:44 2018
 
 import tellurium as te # needs to be imported before cobra, otherwise: "Segmentation fault: 11"
 import cobra
-import settings, json, itertools, pickle
+import settings, sys, os, json, itertools, pickle
 from cobra.util import create_stoichiometric_matrix
 import pandas as pd
 import numpy as np
@@ -392,8 +392,8 @@ def main(n_parameterizations, condition, new_condition='Glucose'):
     ### time points to save and number of parameterizations per model
     time_points = [0, 10, 15, 25, 40, 45, 55, 70]
 
-    job_index = 1#int(os.environ.get("LSB_JOBINDEX"))
-    number_jobs = 200#int(os.environ.get("LSB_JOBINDEX_END"))
+    job_index = int(os.environ.get("LSB_JOBINDEX"))
+    number_jobs = int(os.environ.get("LSB_JOBINDEX_END"))
     chunk = topologies[job_index-1::number_jobs]
         
     ### iterate over the topologies in this chunk
@@ -412,7 +412,6 @@ def main(n_parameterizations, condition, new_condition='Glucose'):
             
             model = perturb(model, condition, new_condition)
             df_sim = simulate_antimony_model(model, plot=True, time_points = time_points)
-            1/0
             result += [df_sim, pd.Series(model.P)]
             
         results[model.tag] = result
@@ -421,8 +420,10 @@ def main(n_parameterizations, condition, new_condition='Glucose'):
         pickle.dump(results, handle, protocol=pickle.HIGHEST_PROTOCOL) 
 
 if __name__ == '__main__':
-    condition = 'Succinate'#str(sys.argv[1]) # initial carbon source, switching to glucose
-    n_parameterizations = 1#int(sys.argv[2])
+    #condition = 'Succinate' # initial carbon source, switching to glucose
+    #n_parameterizations = 1
+    condition = str(sys.argv[1]) 
+    n_parameterizations = int(sys.argv[2])
     main(n_parameterizations, condition)
 
 # test: bsub -J "array[1-200]" -W 120:00 -R "rusage[mem=5000]" python ensemble.py Pyruvate 2
