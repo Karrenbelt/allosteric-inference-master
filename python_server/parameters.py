@@ -191,7 +191,7 @@ df = pb_data_template(species_and_parameters)
 
 #%% Parsing enzyme data
          
-def recursive(boolean_rules, enzyme_cond_data, enzyme_cond_std):
+def recursive(boolean_rules, enzyme_cond_data):
     
     def aggregate(agg, boolean_rule_list):
         values = []
@@ -225,41 +225,25 @@ def recursive(boolean_rules, enzyme_cond_data, enzyme_cond_std):
     
 enzyme_data = pd.read_csv(settings.ECOLI_PROT_FNAME).set_index('Bnumber')
 GSMM = cobra.io.read_sbml_model(settings.ECOLI_GSMM_FNAME)   
-extended_core = cobra.io.read_sbml_model(settings.ECOLI_GSMM_FNAME)
+extended_core = cobra.io.read_sbml_model(settings.ECOLI_EXCORE_FNAME)
 algebra = boolean.BooleanAlgebra()
 
 enzyme_cond_mean = enzyme_data[condition+' (mean)']
-enzyme_cond_std  = enzyme_data[condition+' (cv)'].multiply(enzyme_cond_mean)/100
-enzyme_cond_data = enzyme_cond_mean#, enzyme_cond_std]
+#enzyme_cond_std  = enzyme_data[condition+' (cv)'].multiply(enzyme_cond_mean)/100
+
+enzyme_cond_data = enzyme_cond_mean
 for rxn in extended_core.reactions:
     gene_rules = rxn.gene_reaction_rule
     enzyme_count = []
     if len(gene_rules) != 0:
         boolean_rules = algebra.parse(gene_rules)
-        enzyme_count_mean = recursive(boolean_rules, enzyme_cond_data)
-        ## error propagation 
-#        enzyme_count_std = recursive(boolean_rules, enzyme_cond_std)
+        enzyme_count = recursive(boolean_rules, enzyme_cond_data)
     else: 
-        enzyme_count = None
+        enzyme_count = np.nan
         
     if not rxn.id.startswith('EX_'):
-        print(enzyme_count)
         df.loc['E_'+model_mapping.get(rxn.id),'!Mean'] = enzyme_count
         
-    
-  
-# =============================================================================
-# gene_IDs = [str(i) for i in GSMM.genes]
-# for ID in gene_IDs:
-#     if ID in enzyme_data.index:
-#         mean = enzyme_data.loc[ID,condition+' (mean)']
-#         std = enzyme_data.loc[ID,condition+' (cv)']  / 100 * mean
-# =============================================================================
-        
-
-
-
-
 
 
 #%% Parsing Michaelis-Menten constants
