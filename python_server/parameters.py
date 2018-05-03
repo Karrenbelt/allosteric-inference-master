@@ -12,8 +12,9 @@ import numpy as np
 import pandas as pd
 from cobra.util import create_stoichiometric_matrix
 from scipy import constants
+from uncertainties import ufloat
 
-
+condition = 'Succinate'
 #%% Parsing data from Link
 
 df = pd.read_excel(settings.DATA_DIR+'/Link_2014_S2.xlsx')
@@ -189,157 +190,76 @@ species_and_parameters = json.load(open(settings.CACHE_DIR+'/model_species_and_p
 df = pb_data_template(species_and_parameters)
 
 #%% Parsing enzyme data
-
-GSMM = cobra.io.read_sbml_model(settings.ECOLI_GSMM_FNAME)
-gene_IDs = [str(i) for i in GSMM.genes]
-
-
-def mapping_bnumber_to_biggreaction(IDs):
-    Rxns = []
-    for i in IDs:
-        if gene_IDs.count(i) == 0:
-            Rxns.append('NaN')
-        else:
-            current = GSMM.genes.get_by_id(i)
-            rxns = [str(j) for j in current.reactions]
-            Rxns.append(rxns)
-    return Rxns
-
-def splitting_rxn_ID(rxns):
-    rxn_f = []
-    for line in rxns:
-        current = []
-        for i in line:
-            ls = i.split(':')
-            current.append(ls[0])
-        rxn_f.append(current)
-    return rxn_f
-
-#function used to explode the table
-def splitDataFrameList(df,target_column):
-    ''' df = dataframe to split,
-    target_column = the column containing the values to split
-    separator = the symbol used to perform the split
-    returns: a dataframe with each entry for the target column separated, with each element moved into a new row. 
-    The values in the other columns are duplicated across the newly divided rows.
-    '''
-    def splitListToRows(row,row_accumulator,target_column):
-        split_row = row[target_column]
-        for s in split_row:
-            new_row = row.to_dict()
-            new_row[target_column] = s
-            row_accumulator.append(new_row)
-    new_rows = []
-    df.apply(splitListToRows,axis=1,args = (new_rows,target_column))
-    new_df = pd.DataFrame(new_rows)
-    return new_df
-
-#extracts relevant E_levels -> the ones that are present in the model
-def extract_relevant(dataframe, model):
-    GSMM = cobra.io.read_sbml_model(model)
-    GSMM_array = cobra.util.array.create_stoichiometric_matrix(GSMM, array_type='dense', dtype=None)
-    s = pd.DataFrame(data = GSMM_array, columns = GSMM.reactions.list_attr("id"), index = GSMM.metabolites.list_attr("id"))
-    idxs = dataframe['bigg.reaction'].tolist()
-    relevant = pd.DataFrame()
-    for i in s.columns:
-        if i in idxs:
-            idx = idxs.index(i)
-            relevant = relevant.append(dataframe.iloc[idx])
-    return relevant
-
-#extract gene reaction rules for all relevant reactions
-def extract_reaction_rules(dataframe):
-    rxn_rules = []
-    for bigg in dataframe['bigg.reaction']:
-            rxn_rules.append(GSMM.reactions.get_by_id(bigg).gene_reaction_rule)
-    return rxn_rules
-
-#convert gene reaction rules to boolean expression
-def convert_to_boolean_expr(rxn_rules):
-    algebra = boolean.BooleanAlgebra()
-    rxn_bools = []
-    for i in range(0,len(rxn_rules)):
-        if len(rxn_rules[i]) != 0:
-            rule = algebra.parse(rxn_rules[i])
-            rxn_bools.append(rule)
-        else:
-            rxn_bools.append(pd.np.nan)
-    return rxn_bools
-
-#get the concentration for one catalyst representative for the reaction
-def get_amount(reaction_rule):
-    if reaction_rule != reaction_rule:
-        return np.nan
-    elif type(reaction_rule) == boolean.boolean.Symbol:
-        return float(lookup.get(reaction_rule.obj, np.nan))
-    else:
+         
+def recursive(boolean_rules, enzyme_cond_data, enzyme_cond_std):
+    
+    def aggregate(agg, boolean_rule_list):
         values = []
-        for rule in reaction_rule.args:
-            values.append(get_amount(rule))
-        cleanedList = [x for x in values if str(x).lower() != 'nan']
-        clean = [x for x in cleanedList if x != None]
-        rule = reaction_rule.operator
-        if clean:
-            val = sum(clean) if rule == '|' else min(clean)
+        for boolean_rule in boolean_rule_list:
+            value = recursive(boolean_rule, enzyme_cond_data)
+            if value is not None:
+                values.append(value)
+        if values != []:
+            return agg(values)
         else:
-            val = np.nan
-        return val
+            return None
+
+    if type(boolean_rules) == boolean.boolean.Symbol: 
+        locus_tag = str(boolean_rules)
+        if locus_tag in enzyme_cond_data.index:
+            value = enzyme_cond_data[locus_tag]
+            if type(value) is not np.int64: # multiple values for the same locus_tag
+                pass # this need manual curation: AND or OR logic applies?
+            else:
+                return value
+        else: 
+            return None
+        
+    elif type(boolean_rules) == boolean.boolean.OR:
+        return aggregate(sum, boolean_rules.args)
+    elif type(boolean_rules) == boolean.boolean.AND:
+        return aggregate(min, boolean_rules.args)
+    else:
+        raise ValueError('exception: type {}'.format(type(boolean_rules)))
+            
+    
+enzyme_data = pd.read_csv(settings.ECOLI_PROT_FNAME).set_index('Bnumber')
+GSMM = cobra.io.read_sbml_model(settings.ECOLI_GSMM_FNAME)   
+extended_core = cobra.io.read_sbml_model(settings.ECOLI_GSMM_FNAME)
+algebra = boolean.BooleanAlgebra()
+
+enzyme_cond_mean = enzyme_data[condition+' (mean)']
+enzyme_cond_std  = enzyme_data[condition+' (cv)'].multiply(enzyme_cond_mean)/100
+enzyme_cond_data = enzyme_cond_mean#, enzyme_cond_std]
+for rxn in extended_core.reactions:
+    gene_rules = rxn.gene_reaction_rule
+    enzyme_count = []
+    if len(gene_rules) != 0:
+        boolean_rules = algebra.parse(gene_rules)
+        enzyme_count_mean = recursive(boolean_rules, enzyme_cond_data)
+        ## error propagation 
+#        enzyme_count_std = recursive(boolean_rules, enzyme_cond_std)
+    else: 
+        enzyme_count = None
+        
+    if not rxn.id.startswith('EX_'):
+        print(enzyme_count)
+        df.loc['E_'+model_mapping.get(rxn.id),'!Mean'] = enzyme_count
+        
+    
+  
+# =============================================================================
+# gene_IDs = [str(i) for i in GSMM.genes]
+# for ID in gene_IDs:
+#     if ID in enzyme_data.index:
+#         mean = enzyme_data.loc[ID,condition+' (mean)']
+#         std = enzyme_data.loc[ID,condition+' (cv)']  / 100 * mean
+# =============================================================================
+        
 
 
-E_levels = pd.read_csv('Enzyme_Levels.csv', sep=';')
-#%% this needs work
-# =============================================================================
-# E_levels2 = pd.read_csv(settings.ECOLI_PROT_FNAME)    
-# 
-# labels = E_levels.iloc[1]
-# E_levels.columns = labels
-# 
-# 
-# #mapping the rxns according to the given bnumber        
-# new = np.empty([len(E_levels.index),1])
-# E_levels['newcol'] = new
-# E_levels.rename(columns={'newcol':'bigg.reaction'}, inplace=True)
-# Rxns = mapping_bnumber_to_biggreaction(E_levels['Bnumber'])
-# E_levels['bigg.reaction'] = Rxns
-# 
-# #dropping genes for which no rxn match was found
-# idxs = E_levels.index
-# for i in idxs:
-#     if Rxns[i] == 'NaN':
-#         E_levels = E_levels.drop(i)
-#         
-# #splitting of the bigg.id from reaction string
-# E_levels['bigg.reaction'] = splitting_rxn_ID(E_levels['bigg.reaction'])
-# 
-# 
-# E_levels = splitDataFrameList(E_levels, 'bigg.reaction')
-# relevant_cols = ['bigg.reaction', 'Bnumber', 'Succinate']
-# E_levels = E_levels[relevant_cols]
-# 
-# relevant_E = extract_relevant(E_levels, 'extended_core.xml')
-# 
-# relevant_E.index = relevant_E['Bnumber']
-# E_levels.index = E_levels['Bnumber']
-# lookup = E_levels.groupby("Bnumber").first()["Succinate"].to_dict()
-# rxn_rules = extract_reaction_rules(relevant_E)
-# rxn_bools = convert_to_boolean_expr(rxn_rules)
-# #get_amount(rxn_bools[5])
-# finalamounts = []
-# for i in rxn_bools:
-#     finalamounts.append(get_amount(i))
-# relevant_E['!Mean'] = finalamounts
-# relevant_E.index = relevant_E['bigg.reaction']
-# #fill the master table
-# for i in relevant_E.index:
-#     ID = 'E_' + i
-#     if ID in df.index:
-#         df.at[ID, '!Mean'] = relevant_E.at[i,'!Mean']   
-# 
-# 
-# 
-# 
-# 
-# =============================================================================
+
+
 
 
 #%% Parsing Michaelis-Menten constants
@@ -386,19 +306,18 @@ for idx in df.index:
         rxn, met = get_rxn_and_met_id(idx)
         mapped_met = model_mapping[met][:2] # strip compartment
         ec_number = bigg_ec_dict.get(model_mapping[rxn].lower())
-        if ec_number: # if there exists a ec_number
-            if ec_number in km.index: # if ec in data
-                km_vals = km.loc[ec_number,:]
-                
-                if isinstance(km_vals, pd.Series):
-                    km_vals = pd.DataFrame(km_vals).T
-                
-                kms_rxn = km_vals.set_index('bigg.metabolite')
-                if mapped_met in kms_rxn.index: # if met in data
-                    values = kms_rxn.loc[mapped_met,'KM_Value']
-                    uniques = list(set(values))
-                    assert(len(uniques) == 1)
-                    df.loc[idx, '!Mean'] = uniques[0]
+        if ec_number in km.index: # if there exists a ec_number, and in data
+            km_vals = km.loc[ec_number,:]
+            
+            if isinstance(km_vals, pd.Series):
+                km_vals = pd.DataFrame(km_vals).T
+            
+            kms_rxn = km_vals.set_index('bigg.metabolite')
+            if mapped_met in kms_rxn.index: # if met in data
+                values = kms_rxn.loc[mapped_met,'KM_Value']
+                uniques = list(set(values))
+                assert(len(uniques) == 1)
+                df.loc[idx, '!Mean'] = uniques[0]
             
 
 #%% Parsing data for catalytic constants
